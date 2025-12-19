@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+    <title>Solve Puzzle</title>
+    <style th:inline="css">
+        body { background: #e9ecef; color: #333; font-family: monospace; display: flex; flex-direction: row; justify-content: center; padding: 20px; gap: 20px; }
+        .main-area { display: flex; flex-direction: column; align-items: center; z-index: 10; position: relative;}
+        .game-board { background: white; padding: 15px; border-radius: 10px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); overflow: auto; max-width: 90vw; }
+        table { border-collapse: separate; border-spacing: 0; margin: 0 auto; border: 2px solid #333; }
+
+        /* Динамический размер клетки в зависимости от сетки */
+        td.grid-cell {
+            width: [(${cw.width > 50 ? '12px' : '25px'})];
+            height: [(${cw.width > 50 ? '12px' : '25px'})];
+            border-right: 1px solid #ccc; border-bottom: 1px solid #ccc; background: #fff; cursor: pointer; text-align: center; vertical-align: middle; font-size: 10px; color: #d63031;
+        }
+        td.grid-cell:nth-child(5n+1) { border-right: 1px solid #888; }
+        tr:nth-child(5n) td.grid-cell { border-bottom: 1px solid #888; }
+        td.grid-cell.crossed::after { content: "×"; font-weight: bold; }
+        .clue-cell-top { vertical-align: bottom; background: #dfe6e9; border-bottom: 2px solid #333; padding: 2px; font-size: 9px; }
+        .clue-cell-left { text-align: right; background: #dfe6e9; border-right: 2px solid #333; padding: 0 5px; white-space: nowrap; font-size: 9px; }
+        .clue-block { display: inline-block; padding: 0 2px; margin: 1px; color: #fff; text-shadow: 0 0 2px #000; border-radius: 2px; }
+        .clue-block-vert { display: block; margin: 1px auto; }
+        .controls { margin-top: 20px; display: flex; gap: 10px; align-items: center; background: white; padding: 10px; border-radius: 50px; flex-wrap: wrap; justify-content: center; }
+        .palette-btn { width: 30px; height: 30px; border: 3px solid transparent; cursor: pointer; border-radius: 50%; box-shadow: 0 2px 3px rgba(0,0,0,0.2); box-sizing: border-box; }
+        .palette-btn.active { border-color: #333; transform: scale(1.2); }
+        .cross-tool { background: #fff; color: #d63031; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 20px; border: 1px solid #ccc; }
+        .btn-group { margin-top: 20px; display: flex; gap: 10px; }
+        .action-btn { background: #2d3436; color: white; border: none; padding: 10px 20px; cursor: pointer; border-radius: 5px; font-weight: bold; }
+        .answer-panel { display: none; flex-direction: column; background: white; padding: 20px; border-radius: 10px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); height: fit-content; z-index: 10; }
+        .preview-cell { width: 5px; height: 5px; }
+        #msgBox { display: none; background: #fff; padding: 15px; border-radius: 8px; margin-top: 10px; text-align: center; border-left: 5px solid #ff7675; }
+        .mascot { position: fixed; bottom: 0; right: 0; height: 350px; opacity: 1.0; pointer-events: none; z-index: 100;}
+    </style>
+</head>
+<body>
+<div class="main-area">
+    <div class="controls">
+        <div th:each="color, iter : ${palette}">
+            <div class="palette-btn" th:style="'background-color: ' + ${color} + '; border: 1px solid #ccc;'" th:onclick="'selectColor(' + (${iter.index} - 1) + ', this)'"></div>
+        </div>
+        <div style="width: 1px; height: 30px; background: #ccc; margin: 0 5px;"></div>
+        <div title="Cross" class="palette-btn cross-tool" onclick="selectColor(-2, this)">×</div>
+    </div>
+    <div class="game-board">
+        <table>
+            <thead>
+            <tr>
+                <th style="background: #b2bec3;"></th>
+                <th th:each="col : ${colClues}" class="clue-cell-top">
+                    <div th:each="block : ${col}" class="clue-block clue-block-vert" th:text="${block[0]}" th:style="'background-color: ' + ${palette[__${block[1]}__]}"></div>
+                </th>
+            </tr>
+            </thead>
+            <tbody>
+            <tr th:each="row, rowStat : ${rowClues}">
+                <td class="clue-cell-left">
+                    <span th:each="block : ${row}" class="clue-block" th:text="${block[0]}" th:style="'background-color: ' + ${palette[__${block[1]}__]}"></span>
+                </td>
+                <td th:each="i : ${#numbers.sequence(0, cw.width - 1)}" class="grid-cell" th:attr="data-x=${i}, data-y=${rowStat.index}" onclick="paint(this)" onmouseover="if(event.buttons===1) paint(this)"></td>
+            </tr>
+            </tbody>
+        </table>
+    </div>
+    <div id="msgBox"></div>
+    <div class="btn-group">
+        <button class="action-btn" onclick="checkSolution()" style="background:#0984e3">Проверить</button>
+        <button class="action-btn" onclick="toggleSolution()" style="background:#e17055">Ответ</button>
+        <a href="/" class="action-btn" style="text-decoration:none; background:#636e72">Назад</a>
+    </div>
+</div>
+<div id="answerPanel" class="answer-panel">
+    <h3>Решение:</h3>
+    <table>
+        <tr th:each="row : ${#strings.arraySplit(cw.solutionGrid, ';')}">
+            <td th:each="val : ${#strings.arraySplit(row, ',')}" class="preview-cell" th:style="${val} == '-1' ? 'background:#fff; border:1px solid #eee' : 'background:' + ${palette[__${val}__ + 1]}"></td>
+        </tr>
+    </table>
+    <button onclick="toggleSolution()" style="margin-top:10px;">Закрыть</button>
+</div>
+<div id="solutionData" th:text="${cw.solutionGrid}" style="display:none;"></div>
+<div id="paletteData" style="display:none;"><span th:each="c : ${palette}" th:text="${c} + ','"></span></div>
+<img src="https://media1.tenor.com/m/fA2ac6r1cTQAAAAC/zero-two-darling-in-the-franxx.gif" class="mascot">
+<script>
+    let selectedColorIndex = -1;
+    let palette = document.getElementById('paletteData').innerText.split(',').filter(Boolean);
+    document.querySelector('.palette-btn').classList.add('active');
+
+    function selectColor(index, element) {
+        selectedColorIndex = index;
+        document.querySelectorAll('.palette-btn').forEach(b => b.classList.remove('active'));
+        element.classList.add('active');
+    }
+
+    function paint(cell) {
+        let currentVal = cell.getAttribute('data-val') || "-1";
+        if (selectedColorIndex != -2 && currentVal == selectedColorIndex) {
+               cell.style.backgroundColor = '#fff'; cell.setAttribute('data-val', "-1"); return;
+        }
+        if (selectedColorIndex === -2) {
+            cell.style.backgroundColor = '#fff'; cell.classList.toggle('crossed'); cell.setAttribute('data-val', "-1");
+        } else {
+            cell.classList.remove('crossed'); cell.style.backgroundColor = palette[selectedColorIndex + 1]; cell.setAttribute('data-val', selectedColorIndex);
+        }
+        cell.style.border = ""; cell.style.borderRight = "1px solid #ccc"; cell.style.borderBottom = "1px solid #ccc";
+        document.getElementById('msgBox').style.display = 'none';
+    }
+
+    function toggleSolution() {
+        let p = document.getElementById('answerPanel');
+        p.style.display = (p.style.display === 'flex') ? 'none' : 'flex';
+    }
+
+    function checkSolution() {
+        let correctGrid = document.getElementById('solutionData').innerText.split(';').map(row => row.split(','));
+        let cells = document.querySelectorAll('.grid-cell');
+        for (let cell of cells) {
+            let x = parseInt(cell.getAttribute('data-x'));
+            let y = parseInt(cell.getAttribute('data-y'));
+            let userVal = cell.getAttribute('data-val') || "-1";
+            let correctVal = correctGrid[y][x];
+            if (userVal != correctVal) {
+                cell.style.border = "2px solid red";
+                let msgBox = document.getElementById('msgBox'); msgBox.style.display = 'block';
+                let colorHtml = correctVal == -1 ? "Белый" : `<b style="color:${palette[parseInt(correctVal)+1]}">Цвет №${parseInt(correctVal)+1}</b>`;
+                msgBox.innerHTML = `Ошибка в строке ${y+1}, столбце ${x+1}. Ожидался: ${colorHtml}`;
+                return;
+            }
+        }
+        alert("Всё верно! 🎉");
+    }
+</script>
+</body>
+</html>
